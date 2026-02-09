@@ -1,0 +1,5 @@
+{
+  "name": "AI Resume & Career Copilot",
+  "description": "An AI-powered platform to generate ATS-optimized resumes, analyze job matches, and create personalized career roadmaps using Gemini 2.5 Flash.",
+  "requestFramePermissions": []
+}
