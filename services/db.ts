@@ -1,71 +1,89 @@
 
-import { User, ResumeData, ResumeVersion, SystemMetrics } from '../types';
+import { User, ResumeData, ResumeVersion, SystemMetrics, AccessLog } from '../types';
 import { SAMPLE_RESUME } from '../constants';
 
 // SIMULATED DATABASE (LocalStorage)
-// In a real app, these would be secure API endpoints.
-
 const DB_KEYS = {
   USER: 'career_copilot_user',
-  ALL_USERS: 'career_copilot_all_users', // Admin access
-  RESUMES: 'career_copilot_resumes', // Store all resumes by ID
-  METRICS: 'career_copilot_metrics'
+  ALL_USERS: 'career_copilot_all_users',
+  RESUMES: 'career_copilot_resumes',
+  METRICS: 'career_copilot_metrics',
+  CREDS: 'career_copilot_creds',
+  LOGS: 'career_copilot_logs' // New key for logs
 };
 
-// Seed Data for Demo
 const SEED_USERS: User[] = [
-  { id: 'admin-1', name: 'System Admin', email: 'admin@system.com', role: 'ADMIN', plan: 'pro', isVerified: true },
-  { id: 'mediator-1', name: 'Sarah Reviewer', email: 'sarah@mediator.com', role: 'MEDIATOR', plan: 'pro', isVerified: true }
+  { id: 'admin-1', name: 'System Admin', email: 'admin@system.com', role: 'ADMIN', plan: 'pro', isVerified: true, lastLogin: Date.now() },
+  { id: 'mediator-1', name: 'Sarah Reviewer', email: 'sarah@mediator.com', role: 'MEDIATOR', plan: 'pro', isVerified: true, lastLogin: Date.now() - 86400000 },
+  { id: 'demo-123', name: 'Alex Candidate', email: 'alex@example.com', role: 'USER', plan: 'free', isVerified: true, lastLogin: Date.now() - 3600000 }
 ];
 
 export const db = {
-  // --- AUTH & USER MANAGEMENT ---
-  
-  saveUser: async (user: User): Promise<User> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Save current session
-    localStorage.setItem(DB_KEYS.USER, JSON.stringify(user));
+  // --- AUTH ---
+  login: async (email: string, password: string): Promise<User | null> => {
+    await new Promise(resolve => setTimeout(resolve, 800));
 
-    // Save to "All Users" DB (for Admin view)
-    const allUsersStr = localStorage.getItem(DB_KEYS.ALL_USERS);
-    let allUsers: User[] = allUsersStr ? JSON.parse(allUsersStr) : [...SEED_USERS];
+    const credsStr = localStorage.getItem(DB_KEYS.CREDS);
+    const creds = credsStr ? JSON.parse(credsStr) : {};
     
-    const existingIndex = allUsers.findIndex(u => u.id === user.id);
-    if (existingIndex >= 0) {
-      allUsers[existingIndex] = user;
-    } else {
-      allUsers.push(user);
+    const isSeed = SEED_USERS.find(u => u.email === email);
+    if (isSeed && password === 'password') {
+        const updatedUser = { ...isSeed, lastLogin: Date.now() };
+        await db.saveUserSession(updatedUser);
+        await db.logAccess(updatedUser.id, updatedUser.name, 'Login');
+        return updatedUser;
     }
-    localStorage.setItem(DB_KEYS.ALL_USERS, JSON.stringify(allUsers));
 
-    return user;
-  },
-
-  verifyUser: async (userId: string): Promise<User | null> => {
-    // Simulate API verification
-    const allUsersStr = localStorage.getItem(DB_KEYS.ALL_USERS);
-    let allUsers: User[] = allUsersStr ? JSON.parse(allUsersStr) : [...SEED_USERS];
-    
-    const userIndex = allUsers.findIndex(u => u.id === userId);
-    if (userIndex >= 0) {
-        allUsers[userIndex].isVerified = true;
-        localStorage.setItem(DB_KEYS.ALL_USERS, JSON.stringify(allUsers));
-        
-        // Update current session if applicable
-        const currentUserStr = localStorage.getItem(DB_KEYS.USER);
-        if (currentUserStr) {
-            const currentUser = JSON.parse(currentUserStr);
-            if (currentUser.id === userId) {
-                currentUser.isVerified = true;
-                localStorage.setItem(DB_KEYS.USER, JSON.stringify(currentUser));
-                return currentUser;
-            }
+    if (creds[email] && creds[email] === password) {
+        const allUsers = await db.getAllUsers();
+        const user = allUsers.find(u => u.email === email);
+        if (user) {
+            const updatedUser = { ...user, lastLogin: Date.now() };
+            // Update user in DB with new login time
+            const userIndex = allUsers.findIndex(u => u.id === user.id);
+            allUsers[userIndex] = updatedUser;
+            localStorage.setItem(DB_KEYS.ALL_USERS, JSON.stringify(allUsers));
+            
+            await db.saveUserSession(updatedUser);
+            await db.logAccess(updatedUser.id, updatedUser.name, 'Login');
+            return updatedUser;
         }
-        return allUsers[userIndex];
     }
     return null;
+  },
+
+  register: async (user: User, password: string): Promise<User> => {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      const allUsers = await db.getAllUsers();
+      if (allUsers.find(u => u.email === user.email)) {
+          throw new Error("User already exists");
+      }
+      const newUser = { ...user, lastLogin: Date.now() };
+      allUsers.push(newUser);
+      localStorage.setItem(DB_KEYS.ALL_USERS, JSON.stringify(allUsers));
+
+      const credsStr = localStorage.getItem(DB_KEYS.CREDS);
+      const creds = credsStr ? JSON.parse(credsStr) : {};
+      creds[user.email] = password;
+      localStorage.setItem(DB_KEYS.CREDS, JSON.stringify(creds));
+      
+      await db.logAccess(user.id, user.name, 'Register');
+      return newUser;
+  },
+
+  saveUserSession: async (user: User) => {
+      localStorage.setItem(DB_KEYS.USER, JSON.stringify(user));
+  },
+
+  saveUser: async (user: User): Promise<User> => {
+    localStorage.setItem(DB_KEYS.USER, JSON.stringify(user));
+    const allUsersStr = localStorage.getItem(DB_KEYS.ALL_USERS);
+    let allUsers: User[] = allUsersStr ? JSON.parse(allUsersStr) : [...SEED_USERS];
+    const existingIndex = allUsers.findIndex(u => u.id === user.id);
+    if (existingIndex >= 0) allUsers[existingIndex] = user;
+    else allUsers.push(user);
+    localStorage.setItem(DB_KEYS.ALL_USERS, JSON.stringify(allUsers));
+    return user;
   },
 
   getUser: async (): Promise<User | null> => {
@@ -74,32 +92,40 @@ export const db = {
   },
 
   getAllUsers: async (): Promise<User[]> => {
-    // ADMIN ONLY in real API
     const data = localStorage.getItem(DB_KEYS.ALL_USERS);
     return data ? JSON.parse(data) : [...SEED_USERS];
   },
 
   logout: async () => {
+    const user = await db.getUser();
+    if (user) await db.logAccess(user.id, user.name, 'Logout');
     localStorage.removeItem(DB_KEYS.USER);
   },
 
-  updateUserPlan: async (plan: 'free' | 'pro'): Promise<User | null> => {
-    const user = await db.getUser();
-    if (user) {
-      const updated = { ...user, plan };
-      await db.saveUser(updated);
-      return updated;
-    }
-    return null;
+  // --- ACCESS LOGS ---
+  logAccess: async (userId: string, userName: string, action: string) => {
+      const logsStr = localStorage.getItem(DB_KEYS.LOGS);
+      const logs: AccessLog[] = logsStr ? JSON.parse(logsStr) : [];
+      logs.unshift({
+          id: Date.now().toString(),
+          userId,
+          userName,
+          timestamp: Date.now(),
+          action
+      });
+      // Keep only last 50 logs
+      if (logs.length > 50) logs.length = 50;
+      localStorage.setItem(DB_KEYS.LOGS, JSON.stringify(logs));
+  },
+
+  getAccessLogs: async (): Promise<AccessLog[]> => {
+      const logsStr = localStorage.getItem(DB_KEYS.LOGS);
+      return logsStr ? JSON.parse(logsStr) : [];
   },
 
   // --- RESUME MANAGEMENT ---
-
-  // USER: Save their own resume
   saveResume: async (data: ResumeData): Promise<ResumeData> => {
     await new Promise(resolve => setTimeout(resolve, 600));
-    
-    // Get current user to bind resume to ID
     const user = await db.getUser();
     if (!user) throw new Error("Unauthorized");
 
@@ -110,124 +136,85 @@ export const db = {
         updatedAt: Date.now()
     };
 
-    // Store in global resumes map
     const allResumesStr = localStorage.getItem(DB_KEYS.RESUMES);
     let allResumes: Record<string, ResumeData> = allResumesStr ? JSON.parse(allResumesStr) : {};
-    
-    allResumes[resumeToSave.userId] = resumeToSave; // Simplification: 1 resume per user for this demo
-    
+    allResumes[resumeToSave.userId] = resumeToSave;
     localStorage.setItem(DB_KEYS.RESUMES, JSON.stringify(allResumes));
     return resumeToSave;
   },
 
-  // USER: Get their own resume
   getResume: async (): Promise<ResumeData> => {
     const user = await db.getUser();
     if (!user) return SAMPLE_RESUME;
-
     const allResumesStr = localStorage.getItem(DB_KEYS.RESUMES);
     const allResumes: Record<string, ResumeData> = allResumesStr ? JSON.parse(allResumesStr) : {};
-    
-    // Return user's resume or sample if none exists
-    const userResume = allResumes[user.id];
-    return userResume ? userResume : { ...SAMPLE_RESUME, userId: user.id, status: 'draft' };
+    return allResumes[user.id] || { ...SAMPLE_RESUME, userId: user.id, status: 'draft' };
   },
 
-  // MEDIATOR: Get all resumes pending review
   getResumesForMediator: async (): Promise<ResumeData[]> => {
-    // Simulate API Security Check
     const currentUser = await db.getUser();
-    if (currentUser?.role !== 'MEDIATOR' && currentUser?.role !== 'ADMIN') {
-        throw new Error("Unauthorized Access: Mediator Role Required");
-    }
-
+    if (currentUser?.role !== 'MEDIATOR' && currentUser?.role !== 'ADMIN') throw new Error("Unauthorized");
     const allResumesStr = localStorage.getItem(DB_KEYS.RESUMES);
     const allResumes: Record<string, ResumeData> = allResumesStr ? JSON.parse(allResumesStr) : {};
-    
     return Object.values(allResumes).filter(r => r.status === 'pending_review');
   },
 
-  // MEDIATOR: Submit review/feedback
-  reviewResume: async (resumeId: string, status: 'approved' | 'changes_requested', feedback: string): Promise<void> => {
-    await new Promise(resolve => setTimeout(resolve, 800));
+  // New: Get ALL Resumes for Admin
+  getAllResumes: async (): Promise<ResumeData[]> => {
+    const currentUser = await db.getUser();
+    if (currentUser?.role !== 'ADMIN') throw new Error("Unauthorized");
+    const allResumesStr = localStorage.getItem(DB_KEYS.RESUMES);
+    const allResumes: Record<string, ResumeData> = allResumesStr ? JSON.parse(allResumesStr) : {};
+    return Object.values(allResumes);
+  },
 
+  reviewResume: async (resumeId: string, status: string, feedback: string): Promise<void> => {
+    await new Promise(resolve => setTimeout(resolve, 800));
     const allResumesStr = localStorage.getItem(DB_KEYS.RESUMES);
     let allResumes: Record<string, ResumeData> = allResumesStr ? JSON.parse(allResumesStr) : {};
     
-    // Find resume by ID (in this simplified structure, we might need to search values if key is userId)
-    let targetUserId = Object.keys(allResumes).find(key => allResumes[key].id === resumeId || (allResumes[key] as any).id === resumeId);
+    // Find resume by ID (handling different structures if needed)
+    let targetUserId = Object.keys(allResumes).find(key => allResumes[key].id === resumeId);
     
-    // Fallback if ID structure varies in demo
+    // Fallback: search values if key isn't userId
     if (!targetUserId) {
-         // Attempt to find by value property
-         const entry = Object.entries(allResumes).find(([_, r]) => r.id === resumeId);
-         if(entry) targetUserId = entry[0];
+        const entry = Object.entries(allResumes).find(([_, r]) => r.id === resumeId);
+        if(entry) targetUserId = entry[0];
     }
 
     if (targetUserId && allResumes[targetUserId]) {
-        allResumes[targetUserId].status = status;
+        allResumes[targetUserId].status = status as any;
         allResumes[targetUserId].feedback = feedback;
         localStorage.setItem(DB_KEYS.RESUMES, JSON.stringify(allResumes));
     }
   },
 
-  // --- SEEDING FOR DEMO ---
   seedPendingResume: async () => {
       const demoId = 'demo-candidate-pending';
-      // Create user entry without logging in
-      const allUsersStr = localStorage.getItem(DB_KEYS.ALL_USERS);
-      let allUsers: User[] = allUsersStr ? JSON.parse(allUsersStr) : [...SEED_USERS];
-      
+      const allUsers = await db.getAllUsers();
       if (!allUsers.find(u => u.id === demoId)) {
-          allUsers.push({
-              id: demoId,
-              name: "Jordan Lee (Demo)",
-              email: "jordan.demo@example.com",
-              role: 'USER',
-              plan: 'free',
-              isVerified: true
-          });
+          allUsers.push({ id: demoId, name: "Jordan Lee (Demo)", email: "jordan.demo@example.com", role: 'USER', plan: 'free', isVerified: true, lastLogin: Date.now() });
           localStorage.setItem(DB_KEYS.ALL_USERS, JSON.stringify(allUsers));
       }
-
-      // Create Pending Resume
       const allResumesStr = localStorage.getItem(DB_KEYS.RESUMES);
       let allResumes: Record<string, ResumeData> = allResumesStr ? JSON.parse(allResumesStr) : {};
-      
-      allResumes[demoId] = {
-          ...SAMPLE_RESUME,
-          id: `resume-${demoId}`,
-          userId: demoId,
-          fullName: "Jordan Lee",
-          email: "jordan.demo@example.com",
-          status: 'pending_review',
-          summary: "Aspiring Product Designer with a background in graphic design. Looking for feedback on my transition resume.",
-          updatedAt: Date.now()
-      };
-      
+      allResumes[demoId] = { ...SAMPLE_RESUME, id: `resume-${demoId}`, userId: demoId, fullName: "Jordan Lee", email: "jordan.demo@example.com", status: 'pending_review', summary: "Aspiring Product Designer...", updatedAt: Date.now() };
       localStorage.setItem(DB_KEYS.RESUMES, JSON.stringify(allResumes));
   },
 
   // --- VERSIONS ---
   saveResumeVersion: async (data: ResumeData, name: string): Promise<ResumeVersion> => {
     const versions = await db.getResumeVersions();
-    const newVersion: ResumeVersion = {
-        id: Date.now().toString(),
-        timestamp: Date.now(),
-        name,
-        data: { ...data }
-    };
+    const newVersion: ResumeVersion = { id: Date.now().toString(), timestamp: Date.now(), name, data: { ...data } };
     versions.unshift(newVersion);
-    const key = `versions_${data.userId}`;
-    localStorage.setItem(key, JSON.stringify(versions));
+    localStorage.setItem(`versions_${data.userId}`, JSON.stringify(versions));
     return newVersion;
   },
 
   getResumeVersions: async (): Promise<ResumeVersion[]> => {
     const user = await db.getUser();
     if (!user) return [];
-    const key = `versions_${user.id}`;
-    const data = localStorage.getItem(key);
+    const data = localStorage.getItem(`versions_${user.id}`);
     return data ? JSON.parse(data) : [];
   },
 
@@ -236,23 +223,21 @@ export const db = {
     if (!user) return;
     const key = `versions_${user.id}`;
     const versions = await db.getResumeVersions();
-    const filtered = versions.filter(v => v.id !== id);
-    localStorage.setItem(key, JSON.stringify(filtered));
+    localStorage.setItem(key, JSON.stringify(versions.filter(v => v.id !== id)));
   },
 
-  // --- ADMIN SYSTEM METRICS ---
+  // --- METRICS ---
   getSystemMetrics: async (): Promise<SystemMetrics> => {
     const allUsers = await db.getAllUsers();
     const allResumesStr = localStorage.getItem(DB_KEYS.RESUMES);
     const allResumes = allResumesStr ? JSON.parse(allResumesStr) : {};
-    const resumeCount = Object.keys(allResumes).length;
     const pendingCount = Object.values(allResumes).filter((r: any) => r.status === 'pending_review').length;
 
     return {
         totalUsers: allUsers.length,
-        resumesCreated: resumeCount,
+        resumesCreated: Object.keys(allResumes).length,
         pendingReviews: pendingCount,
-        aiApiCalls: Math.floor(Math.random() * 500) + 1200, // Mock data
+        aiApiCalls: Math.floor(Math.random() * 500) + 1200,
         systemHealth: 'Healthy'
     };
   }

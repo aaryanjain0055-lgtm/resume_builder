@@ -1,45 +1,39 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { ViewState, ResumeData, JobMatchResult, User, UserRole } from './types';
 import { SAMPLE_RESUME, Icons } from './constants';
 import { ResumeForm } from './components/ResumeForm';
-import { JobAnalyzer } from './components/JobAnalyzer';
 import { CareerRoadmap } from './components/CareerRoadmap';
 import { ChatAssistant } from './components/ChatAssistant';
 import { MediatorPanel } from './components/MediatorPanel';
 import { AdminPanel } from './components/AdminPanel';
 import { CareerIntelligence } from './components/CareerIntelligence';
+import { CoverLetterGenerator } from './components/CoverLetterGenerator';
 import { db } from './services/db';
-
-type AuthMode = 'login' | 'register' | 'verify';
 
 function App() {
   const [view, setView] = useState<ViewState>(ViewState.AUTH);
   const [user, setUser] = useState<User | null>(null);
   const [resumeData, setResumeData] = useState<ResumeData>(SAMPLE_RESUME);
-  const [matchHistory, setMatchHistory] = useState<JobMatchResult[]>([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Auth State
-  const [authMode, setAuthMode] = useState<AuthMode>('login');
-  const [regName, setRegName] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regPassword, setRegPassword] = useState('');
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  
+  // Form State
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [tempUserId, setTempUserId] = useState<string | null>(null);
 
   // Load Session
   useEffect(() => {
     const init = async () => {
       const savedUser = await db.getUser();
       if (savedUser) {
-        if (savedUser.isVerified) {
-            handleRoleLoginSuccess(savedUser);
-        } else {
-            // If session exists but not verified, clear it or show verify screen
-            // For simplicity, let's clear it and force re-login/verify
-             await db.logout();
-        }
+          handleRoleLoginSuccess(savedUser);
       }
     };
     init();
@@ -54,71 +48,63 @@ function App() {
       } else if (loggedInUser.role === 'MEDIATOR') {
           setView(ViewState.MEDIATOR_PANEL);
       } else {
-          setView(ViewState.DASHBOARD);
+          // Default to Resume Builder for Users as requested
+          setView(ViewState.RESUME_BUILDER);
           const savedResume = await db.getResume();
           setResumeData(savedResume);
       }
   };
 
-  const handleDemoLogin = async (role: UserRole) => {
-    setIsLoading(true);
-    try {
-        let demoUser: User;
-
-        if (role === 'ADMIN') {
-            demoUser = { id: 'admin-1', name: 'System Admin', email: 'admin@system.com', role: 'ADMIN', plan: 'pro', isVerified: true };
-        } else if (role === 'MEDIATOR') {
-            demoUser = { id: 'mediator-1', name: 'Sarah Reviewer', email: 'sarah@mediator.com', role: 'MEDIATOR', plan: 'pro', isVerified: true };
-        } else {
-            demoUser = { id: 'demo-123', name: 'Alex Candidate', email: 'alex@example.com', role: 'USER', plan: 'free', isVerified: true };
-        }
-
-        await db.saveUser(demoUser);
-        handleRoleLoginSuccess(demoUser);
-    } catch (err) {
-        console.error(err);
-    } finally {
-        setIsLoading(false);
-    }
+  const handleRoleSelect = (role: UserRole) => {
+      setSelectedRole(role);
+      setAuthMode('login');
+      setEmail('');
+      setPassword('');
+      setFullName('');
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!regName || !regEmail) return;
+      if (!email || !password || !selectedRole) return;
       setIsLoading(true);
-      
+
       try {
-          const newUser: User = {
-              id: `user-${Date.now()}`,
-              name: regName,
-              email: regEmail,
-              role: 'USER',
-              plan: 'free',
-              isVerified: false // Needs verification
-          };
-          
-          await db.saveUser(newUser);
-          setTempUserId(newUser.id);
-          setAuthMode('verify');
-      } catch (e) {
-          alert("Registration failed");
+          const user = await db.login(email, password);
+          if (user && user.role === selectedRole) {
+              handleRoleLoginSuccess(user);
+          } else if (user) {
+              alert(`Incorrect role. This account is a ${user.role}, but you are trying to login as ${selectedRole}.`);
+          } else {
+              alert("Invalid credentials. For demo: admin@system.com / password");
+          }
+      } catch (err) {
+          console.error(err);
+          alert("Login failed.");
       } finally {
           setIsLoading(false);
       }
   };
 
-  const handleVerifyEmail = async () => {
-      if (!tempUserId) return;
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!email || !password || !fullName || !selectedRole) return;
       setIsLoading(true);
+
       try {
-          // Simulate clicking email link
-          const verifiedUser = await db.verifyUser(tempUserId);
-          if (verifiedUser) {
-              alert("Email verified successfully! You are now logged in.");
-              handleRoleLoginSuccess(verifiedUser);
-          }
-      } catch (e) {
-          alert("Verification failed");
+          const newUser: User = {
+              id: `user-${Date.now()}`,
+              name: fullName,
+              email: email,
+              role: selectedRole,
+              plan: 'free',
+              isVerified: true // Auto-verify for demo
+          };
+          
+          await db.register(newUser, password);
+          alert("Account created successfully! Please Sign In.");
+          setAuthMode('login');
+      } catch (e: any) {
+          alert(e.message || "Registration failed. Email might be taken.");
       } finally {
           setIsLoading(false);
       }
@@ -134,9 +120,7 @@ function App() {
   const handleLogout = async () => {
     await db.logout();
     setUser(null);
-    setRegName('');
-    setRegEmail('');
-    setRegPassword('');
+    setSelectedRole(null);
     setAuthMode('login');
     setView(ViewState.AUTH);
     setIsMobileMenuOpen(false);
@@ -145,10 +129,6 @@ function App() {
   const handleResumeChange = async (newData: ResumeData) => {
     setResumeData(newData);
     await db.saveResume(newData); // User saves their own resume
-  };
-
-  const handleAnalysisComplete = (result: JobMatchResult) => {
-    setMatchHistory(prev => [result, ...prev]);
   };
 
   const calculateStrength = (data: ResumeData) => {
@@ -168,8 +148,8 @@ function App() {
 
   // Neon Navbar Component
   const Navbar = () => (
-    <nav className="fixed top-0 w-full z-40 bg-[#05051e]/90 backdrop-blur-md border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <nav className="fixed top-0 w-full z-40 bg-[#05051e]/90 backdrop-blur-md border-b border-white/10 min-w-[1200px]">
+        <div className="max-w-7xl mx-auto px-6">
             <div className="flex items-center justify-between h-16">
                 <div className="flex items-center gap-2 cursor-pointer" onClick={() => user?.role === 'USER' ? setView(ViewState.DASHBOARD) : null}>
                     <div className="p-1.5 bg-gradient-to-tr from-cyan-500 to-purple-600 rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.5)]">
@@ -182,13 +162,13 @@ function App() {
                     {user?.role === 'ADMIN' && <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30 ml-2">ADMIN</span>}
                 </div>
                 
-                {/* Desktop Menu */}
-                <div className="hidden md:flex items-center gap-8">
+                {/* Desktop Menu - Always Visible */}
+                <div className="flex items-center gap-8">
                     {/* USER MENU */}
                     {user?.role === 'USER' && [
-                        { id: ViewState.DASHBOARD, label: 'Dashboard' },
                         { id: ViewState.RESUME_BUILDER, label: 'Resume' },
-                        { id: ViewState.JOB_MATCH, label: 'Match' },
+                        { id: ViewState.DASHBOARD, label: 'Dashboard' },
+                        { id: ViewState.COVER_LETTER, label: 'Cover Letter' },
                         { id: ViewState.ROADMAP, label: 'Roadmap' },
                         { id: ViewState.CAREER_INTEL, label: 'Intelligence' }, // New Item
                     ].map((item) => (
@@ -216,9 +196,9 @@ function App() {
                     )}
                 </div>
 
-                <div className="hidden md:flex items-center gap-4">
+                <div className="flex items-center gap-4">
                     <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-                        <div className="text-right hidden sm:block">
+                        <div className="text-right">
                             <p className="text-sm font-medium text-white">{user?.name}</p>
                             <p className="text-xs text-gray-500 uppercase">{user?.role}</p>
                         </div>
@@ -227,25 +207,15 @@ function App() {
                         </button>
                     </div>
                 </div>
-
-                {/* Mobile Menu Toggle */}
-                <div className="flex md:hidden">
-                    <button 
-                        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                        className="text-gray-400 hover:text-white p-2"
-                    >
-                        {isMobileMenuOpen ? <Icons.X /> : <Icons.Menu />}
-                    </button>
-                </div>
             </div>
         </div>
     </nav>
   );
 
-  // AUTH VIEW (Neon Theme)
+  // AUTH VIEW (Neon Theme) - KEEP CENTERED FLEX
   if (view === ViewState.AUTH) {
     return (
-      <div className="min-h-screen bg-[#05051e] flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
+      <div className="min-h-screen bg-[#05051e] flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
         <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-purple-900/20 rounded-full blur-[100px]"></div>
         <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-cyan-900/20 rounded-full blur-[100px]"></div>
 
@@ -259,153 +229,44 @@ function App() {
             Career<span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">Copilot</span>
           </h2>
           <p className="mt-2 text-center text-sm text-cyan-200/60">
-             {authMode === 'login' && 'Role-Based Access Demo System'}
-             {authMode === 'register' && 'Create Your Candidate Profile'}
-             {authMode === 'verify' && 'Verify Your Email'}
+             Next-Gen AI Career Management
           </p>
         </div>
 
         <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
-          <div className="bg-[#0f0f2d]/80 backdrop-blur-xl py-8 px-4 shadow-[0_0_40px_rgba(0,0,0,0.5)] sm:rounded-xl sm:px-10 border border-white/10">
-            
-            {/* LOGIN MODE */}
-            {authMode === 'login' && (
-                <>
-                    <p className="text-center text-white font-bold mb-4">Select Role to Login</p>
+          <div className="bg-[#0f0f2d]/80 backdrop-blur-xl py-8 px-4 shadow-[0_0_40px_rgba(0,0,0,0.5)] rounded-xl sm:px-10 border border-white/10">
+            {/* Role Selection */}
+            {!selectedRole && (
+                <div className="animate-fade-in">
+                    <p className="text-center text-white font-bold mb-6">Choose your role to continue</p>
                     <div className="space-y-4">
-                        <button 
-                            onClick={() => handleDemoLogin('USER')} 
-                            disabled={isLoading}
-                            className="w-full flex items-center justify-between py-4 px-4 border border-cyan-500/30 rounded-lg text-sm font-medium text-white bg-cyan-900/20 hover:bg-cyan-900/40 transition-all hover:scale-[1.02] group"
-                        >
-                            <span className="flex flex-col text-left">
-                                <span className="font-bold text-cyan-400">Candidate (User)</span>
-                                <span className="text-xs text-slate-400">Build resume, analyze jobs</span>
-                            </span>
-                            <Icons.ChevronRight />
+                        <button onClick={() => handleRoleSelect('USER')} className="w-full flex items-center justify-between py-4 px-4 border border-cyan-500/30 rounded-lg text-sm font-medium text-white bg-cyan-900/20 hover:bg-cyan-900/40 transition-all hover:scale-[1.02] group">
+                            <span className="flex flex-col text-left"><span className="font-bold text-cyan-400 text-lg">Candidate</span><span className="text-xs text-slate-400">Build resume, analyze jobs & interviews</span></span><Icons.ChevronRight />
                         </button>
-
-                        <button 
-                            onClick={() => handleDemoLogin('MEDIATOR')} 
-                            disabled={isLoading}
-                            className="w-full flex items-center justify-between py-4 px-4 border border-purple-500/30 rounded-lg text-sm font-medium text-white bg-purple-900/20 hover:bg-purple-900/40 transition-all hover:scale-[1.02] group"
-                        >
-                            <span className="flex flex-col text-left">
-                                <span className="font-bold text-purple-400">Mediator</span>
-                                <span className="text-xs text-slate-400">Review resumes, give feedback</span>
-                            </span>
-                            <Icons.ChevronRight />
+                        <button onClick={() => handleRoleSelect('MEDIATOR')} className="w-full flex items-center justify-between py-4 px-4 border border-purple-500/30 rounded-lg text-sm font-medium text-white bg-purple-900/20 hover:bg-purple-900/40 transition-all hover:scale-[1.02] group">
+                            <span className="flex flex-col text-left"><span className="font-bold text-purple-400 text-lg">Mediator</span><span className="text-xs text-slate-400">Review resumes, rank candidates</span></span><Icons.ChevronRight />
                         </button>
-
-                        <button 
-                            onClick={() => handleDemoLogin('ADMIN')} 
-                            disabled={isLoading}
-                            className="w-full flex items-center justify-between py-4 px-4 border border-red-500/30 rounded-lg text-sm font-medium text-white bg-red-900/20 hover:bg-red-900/40 transition-all hover:scale-[1.02] group"
-                        >
-                            <span className="flex flex-col text-left">
-                                <span className="font-bold text-red-400">System Admin</span>
-                                <span className="text-xs text-slate-400">Manage users & metrics</span>
-                            </span>
-                            <Icons.ChevronRight />
+                        <button onClick={() => handleRoleSelect('ADMIN')} className="w-full flex items-center justify-between py-4 px-4 border border-red-500/30 rounded-lg text-sm font-medium text-white bg-red-900/20 hover:bg-red-900/40 transition-all hover:scale-[1.02] group">
+                            <span className="flex flex-col text-left"><span className="font-bold text-red-400 text-lg">System Admin</span><span className="text-xs text-slate-400">Manage users & system metrics</span></span><Icons.ChevronRight />
                         </button>
                     </div>
-
-                    <div className="mt-6 border-t border-white/10 pt-6">
-                        <button 
-                            onClick={() => setAuthMode('register')}
-                            className="w-full py-2 text-sm text-slate-400 hover:text-white transition-colors"
-                        >
-                            New Candidate? <span className="text-cyan-400 underline">Create Account</span>
-                        </button>
-                    </div>
-                </>
-            )}
-
-            {/* REGISTER MODE */}
-            {authMode === 'register' && (
-                <form onSubmit={handleRegister} className="space-y-4">
-                    <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1">Full Name</label>
-                        <input 
-                            type="text" required 
-                            value={regName} onChange={(e) => setRegName(e.target.value)}
-                            className="w-full bg-[#1a1a3a] border border-white/10 rounded p-2 text-white focus:border-cyan-500 outline-none"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1">Email</label>
-                        <input 
-                            type="email" required 
-                            value={regEmail} onChange={(e) => setRegEmail(e.target.value)}
-                            className="w-full bg-[#1a1a3a] border border-white/10 rounded p-2 text-white focus:border-cyan-500 outline-none"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1">Password</label>
-                        <input 
-                            type="password" required 
-                            value={regPassword} onChange={(e) => setRegPassword(e.target.value)}
-                            className="w-full bg-[#1a1a3a] border border-white/10 rounded p-2 text-white focus:border-cyan-500 outline-none"
-                        />
-                    </div>
-                    
-                    <button 
-                        type="submit" disabled={isLoading}
-                        className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded-lg transition-colors mt-2"
-                    >
-                        {isLoading ? 'Creating Account...' : 'Sign Up'}
-                    </button>
-
-                    <button 
-                        type="button"
-                        onClick={() => setAuthMode('login')}
-                        className="w-full py-2 text-sm text-slate-400 hover:text-white transition-colors"
-                    >
-                        Back to Login
-                    </button>
-                </form>
-            )}
-
-            {/* VERIFY MODE */}
-            {authMode === 'verify' && (
-                <div className="text-center space-y-4">
-                    <div className="w-16 h-16 bg-cyan-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Icons.Sparkles />
-                    </div>
-                    <h3 className="text-lg font-bold text-white">Check Your Email</h3>
-                    <p className="text-sm text-slate-400">
-                        We sent a verification link to <span className="text-white">{regEmail}</span>.
-                    </p>
-                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300">
-                        <strong>Demo Note:</strong> Since this is a simulation, click the button below to verify your email instantly.
-                    </div>
-                    
-                    <button 
-                        onClick={handleVerifyEmail}
-                        disabled={isLoading}
-                        className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-lg transition-colors"
-                    >
-                        {isLoading ? 'Verifying...' : '⚡ Simulate Email Click'}
-                    </button>
-
-                    <button 
-                         onClick={() => setAuthMode('login')}
-                         className="text-xs text-slate-500 hover:text-white"
-                    >
-                        Cancel
-                    </button>
                 </div>
             )}
             
-            {/* Demo Utilities */}
-            {authMode === 'login' && (
-                <div className="mt-8 pt-4 border-t border-white/5 text-center">
-                    <button 
-                        onClick={handleSeedResume}
-                        className="text-[10px] text-slate-600 hover:text-cyan-400 transition-colors uppercase tracking-widest"
-                    >
-                        ⚡ Developer: Seed Pending Resume
-                    </button>
+            {/* Login Form */}
+            {selectedRole && (
+                <div className="animate-fade-in">
+                    <button onClick={() => setSelectedRole(null)} className="mb-6 text-xs text-slate-500 hover:text-white flex items-center gap-1">← Back to Roles</button>
+                    <h3 className="text-xl font-bold text-white mb-2">{authMode === 'login' ? 'Sign In' : 'Create Account'}</h3>
+                    <p className="text-sm text-slate-400 mb-6">As <span className={`font-bold ${selectedRole === 'USER' ? 'text-cyan-400' : selectedRole === 'MEDIATOR' ? 'text-purple-400' : 'text-red-400'}`}>{selectedRole}</span></p>
+                    <form onSubmit={authMode === 'login' ? handleLoginSubmit : handleRegisterSubmit} className="space-y-4">
+                        {authMode === 'register' && <div><label className="block text-xs font-medium text-slate-400 mb-1">Full Name</label><input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full bg-[#1a1a3a] border border-white/10 rounded p-2 text-white focus:border-cyan-500 outline-none" /></div>}
+                        <div><label className="block text-xs font-medium text-slate-400 mb-1">Email</label><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-[#1a1a3a] border border-white/10 rounded p-2 text-white focus:border-cyan-500 outline-none" /></div>
+                        <div><label className="block text-xs font-medium text-slate-400 mb-1">Password</label><input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-[#1a1a3a] border border-white/10 rounded p-2 text-white focus:border-cyan-500 outline-none" /></div>
+                        <button type="submit" disabled={isLoading} className={`w-full font-bold py-3 rounded-lg transition-colors mt-2 ${selectedRole === 'USER' ? 'bg-cyan-600 hover:bg-cyan-500 text-white' : selectedRole === 'MEDIATOR' ? 'bg-purple-600 hover:bg-purple-500 text-white' : 'bg-red-600 hover:bg-red-500 text-white'}`}>{isLoading ? 'Processing...' : (authMode === 'login' ? 'Sign In' : 'Sign Up')}</button>
+                    </form>
+                    <div className="mt-6 text-center"><p className="text-sm text-slate-500">{authMode === 'login' ? "Don't have an account?" : "Already have an account?"}<button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="ml-2 text-white hover:underline font-medium">{authMode === 'login' ? 'Register Now' : 'Sign In'}</button></p></div>
+                    {authMode === 'login' && <div className="mt-6 p-4 bg-white/5 rounded border border-white/10 text-xs text-slate-400"><p className="font-bold text-white mb-1">Demo Credentials:</p>{selectedRole === 'USER' && <p>alex@example.com / password</p>}{selectedRole === 'MEDIATOR' && <p>sarah@mediator.com / password</p>}{selectedRole === 'ADMIN' && <p>admin@system.com / password</p>}</div>}
                 </div>
             )}
           </div>
@@ -414,23 +275,23 @@ function App() {
     );
   }
 
-  // MAIN APP VIEW
+  // MAIN APP VIEW - FORCE DESKTOP WIDTH
   return (
-    <div className="flex flex-col h-screen bg-[#05051e] text-slate-200 font-sans selection:bg-cyan-500/30">
+    <div className="flex flex-col h-screen bg-[#05051e] text-slate-200 font-sans selection:bg-cyan-500/30 overflow-auto">
       <Navbar />
 
-      <main className="flex-1 overflow-auto pt-20 px-4 pb-4">
-        <div className="max-w-7xl mx-auto h-full">
+      <main className="flex-1 pt-20 px-6 pb-4 min-w-[1300px]">
+        <div className="max-w-7xl mx-auto h-full"> 
           
           {/* USER VIEWS */}
           {user?.role === 'USER' && (
               <>
-                <div className="mb-8 flex flex-col md:flex-row justify-between items-end border-b border-white/5 pb-6">
+                <div className="mb-6 flex flex-row justify-between items-end border-b border-white/5 pb-4">
                     <div>
                     <h1 className="text-3xl font-bold text-white flex items-center gap-2">
                         {view === ViewState.DASHBOARD && <><span className="text-cyan-400">Dashboard</span></>}
                         {view === ViewState.RESUME_BUILDER && <><span className="text-purple-400">Resume Builder</span></>}
-                        {view === ViewState.JOB_MATCH && <><span className="text-green-400">Job Match</span></>}
+                        {view === ViewState.COVER_LETTER && <><span className="text-blue-400">Cover Letter</span></>}
                         {view === ViewState.ROADMAP && <><span className="text-amber-400">Career Roadmap</span></>}
                         {view === ViewState.CAREER_INTEL && <><span className="text-pink-400">Career Intelligence</span></>}
                     </h1>
@@ -438,21 +299,7 @@ function App() {
                 </div>
 
                 {view === ViewState.DASHBOARD && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in">
-                    {/* Status Card - Shows Review Status */}
-                    <div className="bg-[#0f0f2d] p-6 rounded-xl border border-white/10 shadow-lg relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 w-20 h-20 bg-cyan-500/10 rounded-bl-full group-hover:bg-cyan-500/20 transition-colors"></div>
-                        <p className="text-slate-400 text-sm font-medium mb-1">Resume Status</p>
-                        <div className="flex items-center gap-2 mt-2">
-                             {resumeData.status === 'draft' && <span className="text-slate-400 text-lg font-bold">Draft</span>}
-                             {resumeData.status === 'pending_review' && <span className="text-amber-400 text-lg font-bold flex items-center gap-2"><Icons.AlertCircle /> In Review</span>}
-                             {resumeData.status === 'approved' && <span className="text-green-400 text-lg font-bold flex items-center gap-2"><Icons.CheckCircle /> Approved</span>}
-                             {resumeData.status === 'changes_requested' && <span className="text-red-400 text-lg font-bold flex items-center gap-2">Action Required</span>}
-                        </div>
-                        {resumeData.feedback && (
-                            <p className="text-xs text-slate-500 mt-2 bg-white/5 p-2 rounded">New Feedback Available</p>
-                        )}
-                    </div>
+                    <div className="grid grid-cols-3 gap-6 animate-fade-in">
                     
                     <div className="bg-[#0f0f2d] p-6 rounded-xl border border-white/10 shadow-lg relative overflow-hidden group">
                         <div className="absolute top-0 right-0 w-20 h-20 bg-purple-500/10 rounded-bl-full group-hover:bg-purple-500/20 transition-colors"></div>
@@ -461,55 +308,21 @@ function App() {
                     </div>
 
                     <div className="bg-[#0f0f2d] p-6 rounded-xl border border-white/10 shadow-lg relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 w-20 h-20 bg-amber-500/10 rounded-bl-full group-hover:bg-amber-500/20 transition-colors"></div>
-                        <p className="text-slate-400 text-sm font-medium mb-1">Matches Run</p>
-                        <p className="text-3xl font-bold text-white">{matchHistory.length}</p>
+                         <div className="absolute top-0 right-0 w-20 h-20 bg-green-500/10 rounded-bl-full group-hover:bg-green-500/20 transition-colors"></div>
+                        <p className="text-slate-400 text-sm font-medium mb-1">Status</p>
+                        <p className="text-xl font-bold text-white capitalize">{resumeData.status.replace('_', ' ')}</p>
                     </div>
 
-                    <div className="md:col-span-2 bg-gradient-to-r from-cyan-900/40 to-blue-900/40 border border-cyan-500/30 p-8 rounded-2xl relative overflow-hidden">
+                    <div className="col-span-1 bg-gradient-to-r from-cyan-900/40 to-blue-900/40 border border-cyan-500/30 p-8 rounded-2xl relative overflow-hidden">
                         <div className="relative z-10">
-                            <h3 className="text-2xl font-bold text-white mb-2">Targeting a new role?</h3>
-                            <p className="text-cyan-100 mb-6 max-w-md">Use our upgraded Gemini 2.5 Flash model to analyze job descriptions against your resume instantly.</p>
+                            <h3 className="text-2xl font-bold text-white mb-2">Resume Ready?</h3>
+                            <p className="text-cyan-100 mb-6 max-w-md">Edit your resume and submit it to a mediator for review.</p>
                             <button 
-                                onClick={() => setView(ViewState.JOB_MATCH)}
+                                onClick={() => setView(ViewState.RESUME_BUILDER)}
                                 className="bg-cyan-500 text-black px-6 py-2 rounded-lg font-bold hover:bg-cyan-400 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.4)]"
                             >
-                                Analyze Now
+                                Edit Resume
                             </button>
-                        </div>
-                    </div>
-
-                    <div onClick={() => setView(ViewState.CAREER_INTEL)} className="md:col-span-1 bg-gradient-to-br from-purple-900/40 to-pink-900/40 border border-purple-500/30 p-6 rounded-2xl relative overflow-hidden cursor-pointer hover:scale-[1.02] transition-transform">
-                        <div className="relative z-10 flex flex-col h-full justify-between">
-                            <div>
-                                <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2"><Icons.Sparkles /> Career DNA</h3>
-                                <p className="text-purple-200 text-sm">Discover your professional archetype and prepare for interviews with AI.</p>
-                            </div>
-                            <div className="mt-4 text-right">
-                                <span className="text-xs font-bold bg-white/10 px-2 py-1 rounded text-white">Try Intelligence</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    {/* Recent Activity */}
-                    <div className="md:col-span-1 bg-[#0f0f2d] p-6 rounded-xl border border-white/10">
-                        <h3 className="font-bold text-white mb-4 flex items-center gap-2"><Icons.FileText /> Recent Matches</h3>
-                        <div className="space-y-4">
-                            {matchHistory.length === 0 ? (
-                                <p className="text-sm text-slate-500 text-center py-8 italic">No matches yet. Start analyzing!</p>
-                            ) : (
-                                matchHistory.slice(0, 3).map((match, i) => (
-                                    <div key={i} className="flex items-center justify-between pb-3 border-b border-white/5 last:border-0">
-                                        <div>
-                                            <p className="text-sm font-medium text-slate-200 truncate max-w-[120px]">{match.role}</p>
-                                            <p className="text-xs text-slate-500">Just now</p>
-                                        </div>
-                                        <span className={`text-sm font-bold ${match.matchScore > 75 ? 'text-green-400' : 'text-amber-400'}`}>
-                                            {match.matchScore}%
-                                        </span>
-                                    </div>
-                                ))
-                            )}
                         </div>
                     </div>
                     </div>
@@ -521,8 +334,8 @@ function App() {
                     </div>
                 )}
 
-                {view === ViewState.JOB_MATCH && (
-                    <JobAnalyzer resume={resumeData} onAnalysisComplete={handleAnalysisComplete} />
+                {view === ViewState.COVER_LETTER && (
+                    <CoverLetterGenerator resume={resumeData} />
                 )}
 
                 {view === ViewState.ROADMAP && (
@@ -532,6 +345,24 @@ function App() {
                 {view === ViewState.CAREER_INTEL && (
                     <CareerIntelligence resume={resumeData} />
                 )}
+
+                {/* Support / Complaints Footer for USER */}
+                <div className="mt-8 border-t border-white/10 pt-6 pb-6">
+                    <div className="bg-[#0f0f2d] p-6 rounded-xl border border-white/10 flex justify-between items-center shadow-lg">
+                        <div>
+                            <h3 className="text-white font-bold text-lg mb-1">Support & Complaints</h3>
+                            <p className="text-slate-400 text-sm">Facing issues? Contact system administration directly.</p>
+                        </div>
+                        <div className="flex gap-4">
+                             <a href="mailto:admin@system.com" className="flex items-center gap-2 bg-[#1a1a3a] hover:bg-[#252550] border border-white/10 px-4 py-2 rounded-lg text-white transition-colors">
+                                <Icons.Mail /> <span className="text-sm">admin@system.com</span>
+                             </a>
+                             <a href="tel:+15550000000" className="flex items-center gap-2 bg-[#1a1a3a] hover:bg-[#252550] border border-white/10 px-4 py-2 rounded-lg text-white transition-colors">
+                                <Icons.Phone /> <span className="text-sm">+1 (555) 000-0000</span>
+                             </a>
+                        </div>
+                    </div>
+                </div>
               </>
           )}
 
@@ -555,3 +386,4 @@ function App() {
 }
 
 export default App;
+    

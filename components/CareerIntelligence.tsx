@@ -41,9 +41,10 @@ export const CareerIntelligence: React.FC<Props> = ({ resume }) => {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full">
+    // Fixed grid-cols-4
+    <div className="grid grid-cols-4 gap-6 h-full">
       {/* Sidebar Controls */}
-      <div className="lg:col-span-1 bg-[#0f0f2d] p-6 rounded-xl border border-white/10 h-fit">
+      <div className="col-span-1 bg-[#0f0f2d] p-6 rounded-xl border border-white/10 h-fit">
         <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
           <Icons.Sparkles /> Intelligence
         </h2>
@@ -76,7 +77,7 @@ export const CareerIntelligence: React.FC<Props> = ({ resume }) => {
       </div>
 
       {/* Main Content Area */}
-      <div className="lg:col-span-3 space-y-6">
+      <div className="col-span-3 space-y-6">
         
         {/* DNA View */}
         {activeTab === 'dna' && (
@@ -107,7 +108,7 @@ export const CareerIntelligence: React.FC<Props> = ({ resume }) => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-2 gap-6">
                   <div className="p-6 bg-[#1a1a3a] rounded-xl border border-white/10">
                     <h4 className="text-cyan-400 font-bold mb-4 flex items-center gap-2"><Icons.Award /> Primary Strengths</h4>
                     <div className="flex flex-wrap gap-2">

@@ -1,4 +1,5 @@
 
+
 export interface Experience {
   id: string;
   role: string;
@@ -36,16 +37,17 @@ export interface Certification {
   year: string;
 }
 
-export type TemplateId = 'modern-neon' | 'professional' | 'minimalist';
-export type ResumeStatus = 'draft' | 'pending_review' | 'reviewed' | 'approved' | 'changes_requested';
+export type TemplateId = 'executive' | 'modern' | 'classic';
+
+export type ResumeStatus = 'draft' | 'pending_review' | 'changes_requested' | 'forwarded_to_admin' | 'hired' | 'rejected';
 export type UserRole = 'USER' | 'MEDIATOR' | 'ADMIN';
 
 export interface ResumeData {
-  id?: string; // Added ID for DB tracking
-  userId?: string; // Link to user
+  id?: string;
+  userId?: string;
   templateId?: TemplateId;
   status: ResumeStatus;
-  feedback?: string; // Mediator feedback
+  feedback?: string;
   fullName: string;
   email: string;
   phone: string;
@@ -75,8 +77,8 @@ export interface JobMatchResult {
   role: string;
   skillGapAnalysis: {
     category: string;
-    current: number; // 0-10
-    required: number; // 0-10
+    current: number;
+    required: number;
   }[];
 }
 
@@ -101,8 +103,6 @@ export interface CareerRoadmap {
   overview: string;
   weeks: WeeklyPlan[];
 }
-
-// --- NEW AGENT TYPES ---
 
 export interface ResumeRankingResult {
   jobRole: string;
@@ -161,6 +161,7 @@ export enum ViewState {
   JOB_MATCH = 'JOB_MATCH',
   ROADMAP = 'ROADMAP',
   CAREER_INTEL = 'CAREER_INTEL',
+  COVER_LETTER = 'COVER_LETTER',
   MEDIATOR_PANEL = 'MEDIATOR_PANEL',
   ADMIN_PANEL = 'ADMIN_PANEL'
 }
@@ -171,7 +172,8 @@ export interface User {
   email: string;
   role: UserRole;
   plan: 'free' | 'pro';
-  isVerified?: boolean; // Added verification status
+  isVerified?: boolean;
+  lastLogin?: number; // Added to track access
 }
 
 export interface ChatMessage {
@@ -187,4 +189,12 @@ export interface SystemMetrics {
   pendingReviews: number;
   aiApiCalls: number;
   systemHealth: 'Healthy' | 'Degraded';
+}
+
+export interface AccessLog {
+  id: string;
+  userId: string;
+  userName: string;
+  timestamp: number;
+  action: string;
 }

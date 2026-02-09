@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { 
   ResumeData, 
@@ -128,10 +129,6 @@ export const analyzeJobMatch = async (resume: ResumeData, jobDescription: string
     if (!text) throw new Error("No response from AI");
     
     const data = JSON.parse(text);
-    // Fix: Map API response 'current'/'required' to simpler keys if needed, 
-    // but the prompt explicitly asked for 'current' and 'required'. 
-    // The previous type used current/required, the prompt says currentScore/requiredScore.
-    // We will align the prompt return with our TypeScript interface (current, required).
     return data as JobMatchResult;
   } catch (error) {
     console.error("Error analyzing job match:", error);
@@ -498,6 +495,53 @@ export const validateAIOutput = async (aiOutputContent: string): Promise<AIConfi
         return JSON.parse(text) as AIConfidence;
     } catch (error) {
         console.error("Error validating AI output:", error);
+        throw error;
+    }
+};
+
+// ------------------------------------------------
+// 13) COVER LETTER GENERATOR (The Writer)
+// ------------------------------------------------
+export const generateCoverLetter = async (
+  resume: ResumeData, 
+  company: string, 
+  role: string, 
+  motivation: string, 
+  context: string
+): Promise<string> => {
+    try {
+        const prompt = `
+          You are an expert Professional Writer and Career Coach.
+          Generate a tailored, high-impact cover letter.
+
+          INPUTS:
+          - Target Company: ${company}
+          - Target Role: ${role}
+          - User Motivation: ${motivation}
+          - Referral/Context: ${context}
+          - Candidate Resume: ${JSON.stringify(resume)}
+
+          STRICT RULES:
+          1. Match the candidate's Resume Archetype (e.g., if technical, be precise; if creative, be expressive).
+          2. Use ATS-safe formatting (no complex tables or graphics).
+          3. Align with implied job description keywords based on the role title "${role}".
+          4. Do NOT simply copy-paste resume bullets. Synthesize them into a narrative.
+          5. Keep it concise (under 400 words).
+          6. Return ONLY the body of the letter (start with "Dear Hiring Manager," or specific name if provided in context).
+
+          Output plain text.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: MODEL_NAME,
+            contents: prompt
+        });
+
+        const text = response.text;
+        if (!text) throw new Error("No response from AI");
+        return text.trim();
+    } catch (error) {
+        console.error("Error generating cover letter:", error);
         throw error;
     }
 };

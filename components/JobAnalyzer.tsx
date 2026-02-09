@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { ResumeData, JobMatchResult } from '../types';
 import { analyzeJobMatch } from '../services/geminiService';
@@ -31,19 +32,38 @@ export const JobAnalyzer: React.FC<JobAnalyzerProps> = ({ resume, onAnalysisComp
     }
   };
 
+  const loadExample = () => {
+      setJobDescription(`We are looking for a Senior Frontend Engineer to lead our React team.
+      
+Responsibilities:
+- Build scalable web apps using React, TypeScript, and Node.js.
+- Optimize performance and ensure cross-browser compatibility.
+- Mentor junior developers.
+
+Requirements:
+- 5+ years of experience with JavaScript/ES6+.
+- Deep knowledge of React.js and state management (Redux/Context).
+- Experience with AWS and CI/CD pipelines.
+- Strong communication skills.`);
+  };
+
   const scoreData = result ? [{ name: 'Match', uv: result.matchScore, fill: result.matchScore > 75 ? '#22c55e' : '#f59e0b' }] : [];
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
+    // Fixed grid-cols-2 instead of responsive
+    <div className="grid grid-cols-2 gap-8 h-full">
       {/* Input Section */}
       <div className="space-y-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-full flex flex-col">
-          <h2 className="text-xl font-semibold text-slate-800 mb-2 flex items-center gap-2">
-            <Icons.Briefcase /> Job Description
-          </h2>
+          <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-slate-800 flex items-center gap-2">
+                <Icons.Briefcase /> Job Description
+              </h2>
+              <button onClick={loadExample} className="text-sm text-blue-600 font-medium hover:underline">Load Example</button>
+          </div>
           <p className="text-sm text-slate-500 mb-4">Paste the JD here to check your ATS compatibility.</p>
           <textarea
-            className="flex-1 w-full p-4 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm leading-relaxed resize-none"
+            className="flex-1 w-full p-4 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm leading-relaxed resize-none text-black"
             placeholder="Paste Job Description here (e.g., 'We are looking for a Senior React Engineer...')"
             value={jobDescription}
             onChange={(e) => setJobDescription(e.target.value)}
